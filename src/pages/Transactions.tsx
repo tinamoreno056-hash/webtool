@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Transaction } from '@/types/accounting';
 import { getTransactions, saveTransaction, deleteTransaction, generateId } from '@/lib/storage';
-import { PageHeader, StatusBadge, EmptyState } from '@/components/ui/custom-components';
+import { PageHeader, StatusBadge } from '@/components/ui/custom-components';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,21 +21,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MoreHorizontal, Pencil, Trash2, Search, Receipt, ArrowUpRight, ArrowDownRight, Filter } from 'lucide-react';
+import { Plus, MoreHorizontal, Pencil, Trash2, Receipt, ArrowUpRight, ArrowDownRight, ArrowUpDown } from 'lucide-react';
 import { toast } from 'sonner';
+import { DataTable } from '@/components/ui/data-table';
+import { ColumnDef } from '@tanstack/react-table';
 
 const categories = ['Services', 'Consulting', 'Projects', 'Office', 'Software', 'Marketing', 'Travel', 'Utilities', 'Other'];
 
@@ -48,9 +42,6 @@ function formatCurrency(amount: number): string {
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState({
@@ -68,33 +59,8 @@ export default function Transactions() {
     loadTransactions();
   }, []);
 
-  useEffect(() => {
-    filterTransactions();
-  }, [transactions, searchQuery, typeFilter]);
-
   function loadTransactions() {
     setTransactions(getTransactions());
-  }
-
-  function filterTransactions() {
-    let filtered = [...transactions];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.description.toLowerCase().includes(query) ||
-          t.category.toLowerCase().includes(query) ||
-          t.reference?.toLowerCase().includes(query)
-      );
-    }
-
-    if (typeFilter !== 'all') {
-      filtered = filtered.filter((t) => t.type === typeFilter);
-    }
-
-    filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    setFilteredTransactions(filtered);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -154,11 +120,132 @@ export default function Transactions() {
     });
   }
 
-  const totalIncome = filteredTransactions
+  const columns: ColumnDef<Transaction>[] = [
+    {
+      accessorKey: "date",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Date
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        )
+      },
+      cell: ({ row }) => new Date(row.original.date).toLocaleDateString(),
+    },
+    {
+      accessorKey: "description",
+      header: "Description",
+      cell: ({ row }) => {
+        const transaction = row.original;
+        return (
+          <div className="flex items-center gap-2">
+            <div
+              className={`flex h-8 w-8 items-center justify-center rounded-full ${transaction.type === 'income'
+                ? 'bg-success/10 text-success'
+                : 'bg-destructive/10 text-destructive'
+                }`}
+            >
+              {transaction.type === 'income' ? (
+                <ArrowUpRight className="h-4 w-4" />
+              ) : (
+                <ArrowDownRight className="h-4 w-4" />
+              )}
+            </div>
+            <span className="font-medium">{transaction.description}</span>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "category",
+      header: "Category",
+    },
+    {
+      accessorKey: "reference",
+      header: "Reference",
+      cell: ({ row }) => <span className="font-mono text-sm">{row.original.reference}</span>,
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <StatusBadge
+          status={row.original.status}
+          variant={
+            row.original.status === 'completed'
+              ? 'success'
+              : row.original.status === 'pending'
+                ? 'warning'
+                : 'danger'
+          }
+        />
+      ),
+    },
+    {
+      accessorKey: "amount",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Amount
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        )
+      },
+      cell: ({ row }) => {
+        const transaction = row.original;
+        return (
+          <span
+            className={`font-semibold ${transaction.type === 'income' ? 'text-success' : 'text-destructive'
+              }`}
+          >
+            {transaction.type === 'income' ? '+' : '-'}
+            {formatCurrency(transaction.amount)}
+          </span>
+        );
+      },
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => {
+        const transaction = row.original;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleEdit(transaction)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleDelete(transaction.id)}
+                className="text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+
+  const totalIncome = transactions
     .filter((t) => t.type === 'income')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalExpenses = filteredTransactions
+  const totalExpenses = transactions
     .filter((t) => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
 
@@ -299,9 +386,8 @@ export default function Transactions() {
         }
       />
 
-      {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="glass-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
               <ArrowUpRight className="h-6 w-6 text-success" />
@@ -312,7 +398,7 @@ export default function Transactions() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
               <ArrowDownRight className="h-6 w-6 text-destructive" />
@@ -323,7 +409,7 @@ export default function Transactions() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <Receipt className="h-6 w-6 text-primary" />
@@ -338,131 +424,9 @@ export default function Transactions() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search transactions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[180px]">
-            <Filter className="mr-2 h-4 w-4" />
-            <SelectValue placeholder="Filter by type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="income">Income</SelectItem>
-            <SelectItem value="expense">Expense</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Transactions Table */}
-      {filteredTransactions.length === 0 ? (
-        <EmptyState
-          icon={Receipt}
-          title="No transactions found"
-          description="Start tracking your income and expenses by adding your first transaction."
-          action={
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Transaction
-            </Button>
-          }
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTransactions.map((transaction) => (
-                  <TableRow key={transaction.id}>
-                    <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                            transaction.type === 'income'
-                              ? 'bg-success/10 text-success'
-                              : 'bg-destructive/10 text-destructive'
-                          }`}
-                        >
-                          {transaction.type === 'income' ? (
-                            <ArrowUpRight className="h-4 w-4" />
-                          ) : (
-                            <ArrowDownRight className="h-4 w-4" />
-                          )}
-                        </div>
-                        <span className="font-medium">{transaction.description}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{transaction.category}</TableCell>
-                    <TableCell className="font-mono text-sm">{transaction.reference}</TableCell>
-                    <TableCell>
-                      <StatusBadge
-                        status={transaction.status}
-                        variant={
-                          transaction.status === 'completed'
-                            ? 'success'
-                            : transaction.status === 'pending'
-                            ? 'warning'
-                            : 'danger'
-                        }
-                      />
-                    </TableCell>
-                    <TableCell
-                      className={`text-right font-semibold ${
-                        transaction.type === 'income' ? 'text-success' : 'text-destructive'
-                      }`}
-                    >
-                      {transaction.type === 'income' ? '+' : '-'}
-                      {formatCurrency(transaction.amount)}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(transaction)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(transaction.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      <Card className="glass-card p-6">
+        <DataTable columns={columns} data={transactions} searchKey="description" />
+      </Card>
     </div>
   );
 }

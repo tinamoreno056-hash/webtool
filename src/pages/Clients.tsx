@@ -3,7 +3,7 @@ import { Client, ClientTransaction } from '@/types/accounting';
 import { useProducts } from '@/hooks/useProducts';
 import { getClients, saveClient, deleteClient, generateId, formatCurrency, canCreate, canEdit, canDelete, getCompanySettings } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, StatusBadge, EmptyState } from '@/components/ui/custom-components';
+import { PageHeader, StatusBadge } from '@/components/ui/custom-components';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,30 +17,23 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MoreHorizontal, Pencil, Trash2, Search, Users, Mail, Phone, Building2, Printer, ShoppingCart, History } from 'lucide-react';
+import { Plus, MoreHorizontal, Pencil, Trash2, Users, Mail, Phone, Building2, Printer, ShoppingCart, History } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { DataTable } from '@/components/ui/data-table';
+import { ColumnDef } from '@tanstack/react-table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'; // For history dialog
 
 export default function Clients() {
   const { profile } = useAuth();
   const { products } = useProducts();
   const userRole = (profile?.role || 'viewer') as 'admin' | 'staff' | 'viewer';
   const [clients, setClients] = useState<Client[]>([]);
-  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -61,34 +54,17 @@ export default function Clients() {
     unitPrice: 0,
     type: 'sale' as 'sale' | 'return',
   });
-  const printRef = useRef<HTMLDivElement>(null);
+
+  const userCanCreate = canCreate(userRole);
+  const userCanEdit = canEdit(userRole);
+  const userCanDelete = canDelete(userRole);
 
   useEffect(() => {
     loadClients();
   }, []);
 
-  useEffect(() => {
-    filterClients();
-  }, [clients, searchQuery]);
-
   function loadClients() {
     setClients(getClients());
-  }
-
-  function filterClients() {
-    let filtered = [...clients];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query) ||
-          c.email.toLowerCase().includes(query) ||
-          c.company?.toLowerCase().includes(query)
-      );
-    }
-
-    setFilteredClients(filtered);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -293,13 +269,122 @@ export default function Clients() {
     toast.success('Transaction added successfully!');
   }
 
+  const columns: ColumnDef<Client>[] = [
+    {
+      accessorKey: "name",
+      header: "Client",
+      cell: ({ row }) => {
+        const client = row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
+              {client.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="font-medium">{client.name}</p>
+              {client.company && (
+                <p className="text-xs text-muted-foreground">{client.company}</p>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "email",
+      header: "Contact",
+      cell: ({ row }) => {
+        const client = row.original;
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-sm">
+              <Mail className="h-3 w-3 text-muted-foreground" />
+              {client.email}
+            </div>
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Phone className="h-3 w-3" />
+              {client.phone}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "totalRevenue",
+      header: "Total Revenue",
+      cell: ({ row }) => <span className="font-semibold text-emerald-500">{formatCurrency(row.original.totalRevenue)}</span>,
+    },
+    {
+      accessorKey: "outstandingBalance",
+      header: "Outstanding",
+      cell: ({ row }) => {
+        const amount = row.original.outstandingBalance;
+        return amount > 0 ? (
+          <span className="font-semibold text-red-500">{formatCurrency(amount)}</span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        );
+      },
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <StatusBadge
+          status={row.original.status}
+          variant={row.original.status === 'active' ? 'success' : 'default'}
+        />
+      ),
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => {
+        const client = row.original;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openTransactionDialog(client)}>
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Add Transaction
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openHistoryDialog(client)}>
+                <History className="mr-2 h-4 w-4" />
+                View History
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handlePrintSlip(client)}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print Slip
+              </DropdownMenuItem>
+              {userCanEdit && (
+                <DropdownMenuItem onClick={() => handleEdit(client)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+              )}
+              {userCanDelete && (
+                <DropdownMenuItem
+                  onClick={() => handleDelete(client.id)}
+                  className="text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+
   const totalRevenue = clients.reduce((sum, c) => sum + c.totalRevenue, 0);
   const totalOutstanding = clients.reduce((sum, c) => sum + c.outstandingBalance, 0);
   const activeClients = clients.filter((c) => c.status === 'active').length;
-
-  const userCanCreate = canCreate(userRole);
-  const userCanEdit = canEdit(userRole);
-  const userCanDelete = canDelete(userRole);
 
   return (
     <div className="space-y-6">
@@ -390,9 +475,8 @@ export default function Clients() {
         }
       />
 
-      {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="glass-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <Users className="h-6 w-6 text-primary" />
@@ -403,165 +487,34 @@ export default function Clients() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
-              <Building2 className="h-6 w-6 text-success" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10">
+              <Building2 className="h-6 w-6 text-emerald-500" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
-              <p className="text-xl font-bold text-success">{formatCurrency(totalRevenue)}</p>
+              <p className="text-xl font-bold text-emerald-500">{formatCurrency(totalRevenue)}</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-warning/10">
-              <Mail className="h-6 w-6 text-warning-foreground" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
+              <Mail className="h-6 w-6 text-amber-500" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Outstanding</p>
-              <p className="text-xl font-bold">{formatCurrency(totalOutstanding)}</p>
+              <p className="text-xl font-bold text-amber-500">{formatCurrency(totalOutstanding)}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search clients by name, email, or company..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
-      </div>
+      <Card className="glass-card p-6">
+        <DataTable columns={columns} data={clients} searchKey="name" />
+      </Card>
 
-      {/* Clients Table */}
-      {filteredClients.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No clients found"
-          description="Start managing your clients by adding your first one."
-          action={
-            userCanCreate && (
-              <Button onClick={() => setDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Client
-              </Button>
-            )
-          }
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead className="hidden sm:table-cell">Contact</TableHead>
-                    <TableHead className="hidden md:table-cell">Total Revenue</TableHead>
-                    <TableHead className="hidden md:table-cell">Outstanding</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredClients.map((client) => (
-                    <TableRow key={client.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
-                            {client.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-medium">{client.name}</p>
-                            {client.company && (
-                              <p className="text-xs text-muted-foreground">{client.company}</p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1 text-sm">
-                            <Mail className="h-3 w-3 text-muted-foreground" />
-                            {client.email}
-                          </div>
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            {client.phone}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell font-semibold text-success">
-                        {formatCurrency(client.totalRevenue)}
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {client.outstandingBalance > 0 ? (
-                          <span className="font-semibold text-warning-foreground">
-                            {formatCurrency(client.outstandingBalance)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge
-                          status={client.status}
-                          variant={client.status === 'active' ? 'success' : 'default'}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openTransactionDialog(client)}>
-                              <ShoppingCart className="mr-2 h-4 w-4" />
-                              Add Transaction
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => openHistoryDialog(client)}>
-                              <History className="mr-2 h-4 w-4" />
-                              View History
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handlePrintSlip(client)}>
-                              <Printer className="mr-2 h-4 w-4" />
-                              Print Slip
-                            </DropdownMenuItem>
-                            {userCanEdit && (
-                              <DropdownMenuItem onClick={() => handleEdit(client)}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                            )}
-                            {userCanDelete && (
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(client.id)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Transaction Dialog */}
       <Dialog open={transactionDialogOpen} onOpenChange={setTransactionDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -663,7 +616,6 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
-      {/* Transaction History Dialog */}
       <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
         <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
@@ -698,9 +650,9 @@ export default function Clients() {
                         <TableCell className="text-right">{formatCurrency(txn.unitPrice)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(txn.total)}</TableCell>
                         <TableCell>
-                          <StatusBadge 
-                            status={txn.type} 
-                            variant={txn.type === 'sale' ? 'success' : 'info'} 
+                          <StatusBadge
+                            status={txn.type}
+                            variant={txn.type === 'sale' ? 'success' : 'info'}
                           />
                         </TableCell>
                       </TableRow>

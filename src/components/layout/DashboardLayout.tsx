@@ -12,7 +12,7 @@ import {
   TrendingUp,
   CreditCard,
   Menu,
-  X,
+  ChevronLeft,
   ChevronRight,
   Building2,
   LogOut,
@@ -22,7 +22,8 @@ import {
   Shield,
   Package,
   Truck,
-  Phone,
+  Search,
+  Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -30,10 +31,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Input } from '@/components/ui/input';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -55,7 +59,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [isDark, setIsDark] = useState(getTheme() === 'dark');
   const [dateTime, setDateTime] = useState(getCurrentDateTime());
 
@@ -70,6 +74,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     const newTheme = isDark ? 'light' : 'dark';
     setTheme(newTheme);
     setIsDark(!isDark);
+    document.documentElement.classList.toggle('dark');
   }
 
   async function handleLogout() {
@@ -84,165 +89,171 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     : navigation;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-sm lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
+    <div className="min-h-screen bg-background flex overflow-hidden">
       {/* Sidebar */}
-      <aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 w-72 transform bg-sidebar border-r border-sidebar-border transition-transform duration-300 ease-in-out lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
+      <motion.aside
+        initial={{ width: 280 }}
+        animate={{ width: collapsed ? 80 : 280 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+        className="relative z-30 hidden lg:flex flex-col border-r border-border/50 bg-card/50 backdrop-blur-md"
       >
-        <div className="flex h-full flex-col">
-          {/* Logo */}
-          <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+        {/* Logo Section */}
+        <div className="h-16 flex items-center px-4 border-b border-border/50">
+          <div className="flex items-center gap-3 overflow-hidden whitespace-nowrap">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/60 text-white shadow-lg shadow-primary/20">
               <Building2 className="h-5 w-5" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-sidebar-foreground">AccuBooks</h1>
-              <p className="text-xs text-muted-foreground">by Ehsaan Ahmad</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
-
-          {/* Navigation */}
-          <ScrollArea className="flex-1 py-4">
-            <nav className="space-y-1 px-3">
-              {allNavigation.map((item) => {
-                const isActive = location.pathname === item.href;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className={cn(
-                      'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                      isActive
-                        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                        : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
-                    )}
-                    onClick={() => setSidebarOpen(false)}
-                  >
-                    <item.icon
-                      className={cn(
-                        'h-5 w-5 transition-colors',
-                        isActive ? 'text-sidebar-primary' : 'text-muted-foreground group-hover:text-sidebar-primary'
-                      )}
-                    />
-                    <span>{item.name}</span>
-                    {isActive && (
-                      <ChevronRight className="ml-auto h-4 w-4 text-sidebar-primary" />
-                    )}
-                  </Link>
-                );
-              })}
-            </nav>
-          </ScrollArea>
-
-          {/* User Info & Footer */}
-          <div className="border-t border-sidebar-border p-4 space-y-4">
-            {profile && (
-              <div className="flex items-center gap-3 rounded-lg bg-sidebar-accent/50 p-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
-                  {(profile.full_name || profile.username).charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{profile.full_name || profile.username}</p>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Shield className="h-3 w-3" />
-                    {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
-                  </div>
-                </div>
-              </div>
+            {!collapsed && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col"
+              >
+                <span className="font-bold text-lg tracking-tight">AccuBooks</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Enterprise</span>
+              </motion.div>
             )}
-            <div className="text-xs text-center text-muted-foreground space-y-1">
-              <p>Developed by <strong>Ehsaan Ahmad</strong></p>
-              <p className="flex items-center justify-center gap-1">
-                <Phone className="h-3 w-3" /> +923224875471
-              </p>
-            </div>
           </div>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <div className="lg:pl-72">
-        {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
+            className="ml-auto h-6 w-6 rounded-full text-muted-foreground hover:text-foreground hidden lg:flex absolute -right-3 top-6 border border-border bg-background shadow-sm z-50"
+            onClick={() => setCollapsed(!collapsed)}
           >
-            <Menu className="h-5 w-5" />
+            {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
           </Button>
+        </div>
 
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold">
-              {allNavigation.find((n) => n.href === location.pathname)?.name || 'Dashboard'}
+        {/* Navigation Section */}
+        <ScrollArea className="flex-1 py-4">
+          <nav className="space-y-1 px-3">
+            {allNavigation.map((item) => {
+              const isActive = location.pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  className={cn(
+                    'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 relative overflow-hidden',
+                    isActive
+                      ? 'text-primary-foreground shadow-md shadow-primary/25'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTab"
+                      className="absolute inset-0 bg-primary z-0"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    />
+                  )}
+                  <item.icon
+                    className={cn(
+                      'h-5 w-5 shrink-0 z-10 transition-transform duration-300',
+                      isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:scale-110',
+                      collapsed && 'mx-auto'
+                    )}
+                  />
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="z-10 truncate"
+                    >
+                      {item.name}
+                    </motion.span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
+        </ScrollArea>
+
+        {/* User Footer */}
+        <div className="p-3 border-t border-border/50">
+          <div className={cn(
+            "rounded-xl bg-muted/30 p-2 flex items-center gap-3 transition-all cursor-pointer hover:bg-muted/50",
+            collapsed ? "justify-center" : ""
+          )}>
+            <div className="h-9 w-9 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white shrink-0 shadow-sm">
+              <span className="font-bold text-sm">{(profile?.username || 'A').charAt(0).toUpperCase()}</span>
+            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{profile?.full_name || 'Administrator'}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Shield className="h-3 w-3 text-primary" />
+                  {profile?.role || 'Admin'}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-background/50 relative">
+        {/* Header */}
+        <header className="h-16 border-b border-border/50 flex items-center justify-between px-6 bg-background/60 backdrop-blur-xl sticky top-0 z-40">
+          <div className="flex items-center gap-4">
+            <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
+              {allNavigation.find((n) => n.href === location.pathname)?.name || 'Overview'}
             </h2>
-            <p className="text-xs text-muted-foreground hidden sm:block">{dateTime}</p>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Theme Toggle */}
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+          <div className="flex items-center gap-3">
+            <div className="relative hidden md:block">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Type / to search..."
+                className="w-64 h-9 pl-9 bg-muted/40 border-transparent focus:bg-background transition-all"
+              />
+            </div>
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-muted/50 rounded-full">
+              <Bell className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-muted/50 rounded-full" onClick={toggleTheme}>
               {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
 
-            {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-                    {(profile?.full_name || profile?.username || 'U').charAt(0).toUpperCase()}
-                  </div>
+                <Button variant="ghost" className="rounded-full h-8 w-8 p-0 ml-1 border-2 border-primary/20 hover:border-primary transition-colors">
+                  <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${profile?.username || 'admin'}`} alt="Avatar" className="rounded-full" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{profile?.full_name || profile?.username}</p>
-                  <p className="text-xs text-muted-foreground">{profile?.username}</p>
-                </div>
+              <DropdownMenuContent align="end" className="w-56 p-2">
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/settings')}>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
+                <DropdownMenuItem onClick={() => navigate('/settings')} className="cursor-pointer">
+                  <Settings className="mr-2 h-4 w-4" /> Settings
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer focus:bg-destructive/10">
+                  <LogOut className="mr-2 h-4 w-4" /> Logout
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="p-4 lg:p-6">
-          <div className="animate-in">{children}</div>
-        </main>
-
-        {/* Footer */}
-        <footer className="border-t border-border p-4 text-center text-xs text-muted-foreground">
-          <p>AccuBooks v1.0.0 - Developed by <strong>Ehsaan Ahmad</strong> | Phone: +923224875471</p>
-        </footer>
+        {/* Content */}
+        <ScrollArea className="flex-1">
+          <main className="p-6 max-w-7xl mx-auto space-y-6">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </ScrollArea>
       </div>
     </div>
   );

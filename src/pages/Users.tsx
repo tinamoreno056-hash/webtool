@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, StatusBadge, EmptyState } from '@/components/ui/custom-components';
 import { Button } from '@/components/ui/button';
@@ -21,118 +20,85 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MoreHorizontal, Pencil, Trash2, Users, Shield, UserCheck, Eye } from 'lucide-react';
+import { Plus, MoreHorizontal, Shield, UserCheck, Eye, Trash2, Briefcase, Users } from 'lucide-react';
 import { toast } from 'sonner';
-
-type UserRole = 'admin' | 'staff' | 'viewer';
-
-interface CloudUser {
-  id: string;
-  user_id: string;
-  username: string;
-  full_name: string | null;
-  role: string;
-  created_at: string;
-  updated_at: string;
-}
+import { DataTable } from '@/components/ui/data-table';
+import { ColumnDef } from '@tanstack/react-table';
+import { getUsers, saveUser, generateId } from '@/lib/storage';
+import { AppUser } from '@/types/accounting';
 
 export default function UsersPage() {
-  const { profile, signUp } = useAuth();
-  const userRole = (profile?.role || 'viewer') as UserRole;
-  const [users, setUsers] = useState<CloudUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { profile } = useAuth();
+  const userRole = (profile?.role || 'viewer') as 'admin' | 'manager' | 'staff' | 'viewer';
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     name: '',
     email: '',
-    role: 'viewer' as UserRole,
+    role: 'viewer' as 'admin' | 'manager' | 'staff' | 'viewer',
   });
 
   useEffect(() => {
     loadUsers();
   }, []);
 
-  async function loadUsers() {
-    setIsLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error loading users:', error);
-      toast.error('Failed to load users');
-    } else {
-      setUsers(data || []);
-    }
-    setIsLoading(false);
+  function loadUsers() {
+    setUsers(getUsers());
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
-    if (!formData.email || !formData.password || !formData.username) {
-      toast.error('Email, username and password are required');
+
+    if (!formData.username || !formData.password) {
+      toast.error('Username and password are required');
       return;
     }
 
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    // Check if username already exists
+    if (users.some(u => u.username === formData.username)) {
+      toast.error('Username already exists');
       return;
     }
 
-    setIsSubmitting(true);
-    
-    // Create user via Supabase Auth
-    const { error } = await signUp(
-      formData.email, 
-      formData.password, 
-      formData.username, 
-      formData.name,
-      formData.role
-    );
+    const newUser: AppUser = {
+      id: generateId(),
+      username: formData.username,
+      password: `__NEEDS_HASH__:${formData.password}`, // Simple marker for local auth
+      name: formData.name || formData.username,
+      email: formData.email,
+      role: formData.role,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
 
-    if (error) {
-      toast.error(error.message || 'Failed to create user');
-    } else {
-      toast.success('User created successfully!');
-      resetForm();
-      setDialogOpen(false);
-      // Reload users after a short delay to allow profile creation
-      setTimeout(loadUsers, 1000);
-    }
-    
-    setIsSubmitting(false);
+    saveUser(newUser);
+    loadUsers();
+    resetForm();
+    setDialogOpen(false);
+    toast.success('User created successfully!');
   }
 
-  async function handleUpdateRole(user: CloudUser, newRole: string) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', user.id);
+  function handleDelete(userId: string) {
+    // Basic local delete simulation - in a real app, we'd delete from storage
+    // But storage.ts doesn't export deleteUser, so we'll skip for now or add it later if needed.
+    // Actually, let's just manually filter and save back to storage to support deletion.
 
-    if (error) {
-      toast.error('Failed to update role');
-    } else {
-      toast.success('Role updated successfully!');
-      loadUsers();
+    if (userId === 'admin-1' || userId === profile?.id) {
+      toast.error("Cannot delete yourself or the main admin");
+      return;
     }
+
+    const updatedUsers = users.filter(u => u.id !== userId);
+    setUsers(updatedUsers);
+    localStorage.setItem('accounting_users', JSON.stringify(updatedUsers));
+    toast.success('User deleted');
   }
 
   function resetForm() {
@@ -145,23 +111,78 @@ export default function UsersPage() {
     });
   }
 
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'admin': return <Shield className="h-4 w-4" />;
-      case 'staff': return <UserCheck className="h-4 w-4" />;
-      case 'viewer': return <Eye className="h-4 w-4" />;
-      default: return <Eye className="h-4 w-4" />;
-    }
-  };
+  const columns: ColumnDef<AppUser>[] = [
+    {
+      accessorKey: "username",
+      header: "User",
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
+              {(user.name || user.username).charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="font-medium">{user.name || user.username}</p>
+              <p className="text-xs text-muted-foreground">@{user.username}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "email",
+      header: "Email",
+    },
+    {
+      accessorKey: "role",
+      header: "Role",
+      cell: ({ row }) => {
+        const role = row.original.role;
+        return (
+          <div className="flex items-center gap-2">
+            {role === 'admin' ? <Shield className="h-4 w-4" /> :
+              role === 'manager' ? <Briefcase className="h-4 w-4" /> :
+                role === 'staff' ? <UserCheck className="h-4 w-4" /> :
+                  <Eye className="h-4 w-4" />}
+            <StatusBadge
+              status={role}
+              variant={role === 'admin' ? 'danger' : role === 'manager' ? 'warning' : role === 'staff' ? 'info' : 'default'}
+            />
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Created",
+      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString(),
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => {
+        const user = row.original;
+        // Don't simplify deletion of main admin
+        if (user.id === 'admin-1' || user.id === profile?.id) return null;
 
-  const getRoleColor = (role: string): 'danger' | 'info' | 'default' => {
-    switch (role) {
-      case 'admin': return 'danger';
-      case 'staff': return 'info';
-      case 'viewer': return 'default';
-      default: return 'default';
-    }
-  };
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleDelete(user.id)} className="text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete User
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
 
   if (userRole !== 'admin') {
     return (
@@ -215,14 +236,13 @@ export default function UsersPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input
                     id="email"
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="john@example.com"
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -240,7 +260,7 @@ export default function UsersPage() {
                   <Label htmlFor="role">Role</Label>
                   <Select
                     value={formData.role}
-                    onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}
+                    onValueChange={(value: 'admin' | 'manager' | 'staff' | 'viewer') => setFormData({ ...formData, role: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select role" />
@@ -264,11 +284,17 @@ export default function UsersPage() {
                           Admin - Full access
                         </div>
                       </SelectItem>
+                      <SelectItem value="manager">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="h-4 w-4" />
+                          Manager - Manage data
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting ? 'Creating...' : 'Create User'}
+                <Button type="submit" className="w-full">
+                  Create User
                 </Button>
               </form>
             </DialogContent>
@@ -276,9 +302,8 @@ export default function UsersPage() {
         }
       />
 
-      {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -289,7 +314,7 @@ export default function UsersPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -300,7 +325,7 @@ export default function UsersPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -313,94 +338,9 @@ export default function UsersPage() {
         </Card>
       </div>
 
-      {/* Users Table */}
-      {isLoading ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            Loading users...
-          </CardContent>
-        </Card>
-      ) : users.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No users found"
-          description="Create your first user to get started"
-          action={
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add User
-            </Button>
-          }
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
-                          {(user.full_name || user.username).charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-medium">{user.full_name || user.username}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.username}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getRoleIcon(user.role)}
-                        <StatusBadge
-                          status={user.role}
-                          variant={getRoleColor(user.role)}
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleUpdateRole(user, 'viewer')}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Set as Viewer
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateRole(user, 'staff')}>
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            Set as Staff
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateRole(user, 'admin')}>
-                            <Shield className="mr-2 h-4 w-4" />
-                            Set as Admin
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      <Card className="glass-card p-6">
+        <DataTable columns={columns} data={users} searchKey="username" />
+      </Card>
 
       {/* Footer branding */}
       <div className="text-center text-xs text-muted-foreground pt-4">

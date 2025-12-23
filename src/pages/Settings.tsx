@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CompanySettings, CURRENCIES, TIMEZONES } from '@/types/accounting';
 import { getCompanySettings, saveCompanySettings, exportData, importData, changePassword, getTheme, setTheme } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,11 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Building2, Save, Download, Upload, Database, Globe, Lock, Moon, Sun, Github, Clock, DollarSign, Mail } from 'lucide-react';
+import { Building2, Save, Download, Upload, Database, Globe, Lock, Moon, Sun, Github, Clock, DollarSign, Mail, Pencil, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Settings() {
-  const { profile, user, updatePassword, updateEmail } = useAuth();
+  const navigate = useNavigate();
+  const { profile, user, updatePassword, updateEmail, updateProfile } = useAuth();
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState('');
   const [settings, setSettings] = useState<CompanySettings>(getCompanySettings());
   const [isSaving, setIsSaving] = useState(false);
   const [isDark, setIsDark] = useState(getTheme() === 'dark');
@@ -75,7 +79,7 @@ export default function Settings() {
 
   function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
-    
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       toast.error('New passwords do not match');
       return;
@@ -98,7 +102,7 @@ export default function Settings() {
 
   function handleChangeEmail(e: React.FormEvent) {
     e.preventDefault();
-    
+
     if (!emailForm.newEmail || !emailForm.newEmail.includes('@')) {
       toast.error('Please enter a valid email');
       return;
@@ -110,6 +114,24 @@ export default function Settings() {
       } else {
         setEmailForm({ newEmail: '' });
         toast.success('Email updated successfully!');
+      }
+    });
+  }
+
+  function handleUpdateName() {
+    if (!newName.trim()) {
+      toast.error('Name cannot be empty');
+      return;
+    }
+
+    setIsSaving(true);
+    updateProfile({ full_name: newName }).then(({ error }) => {
+      setIsSaving(false);
+      if (error) {
+        toast.error(error.message);
+      } else {
+        setIsEditingName(false);
+        toast.success('Name updated successfully');
       }
     });
   }
@@ -335,6 +357,29 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="security" className="space-y-4">
+          {profile?.role === 'admin' && (
+            <Card className="glass-card bg-primary/5 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Manage system users, roles, and permissions.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="font-medium">System Users</p>
+                    <p className="text-sm text-muted-foreground">Add, edit, or remove users and assign roles.</p>
+                  </div>
+                  <Button onClick={() => navigate('/users')}>Manage Users</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -395,9 +440,31 @@ export default function Settings() {
                   <span className="text-muted-foreground">Role:</span>
                   <span className="font-medium capitalize">{profile?.role}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Name:</span>
-                  <span className="font-medium">{profile?.full_name || profile?.username}</span>
+                  <div className="flex items-center gap-2">
+                    {isEditingName ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          className="h-8 w-40"
+                        />
+                        <Button size="sm" onClick={handleUpdateName} disabled={isSaving}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setIsEditingName(false)}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{profile?.full_name || profile?.username}</span>
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                          setNewName(profile?.full_name || profile?.username || '');
+                          setIsEditingName(true);
+                        }}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -515,7 +582,7 @@ export default function Settings() {
 
               <div className="rounded-lg bg-info/10 p-4">
                 <p className="text-sm">
-                  <strong>Tip:</strong> Your data is stored locally in your browser. 
+                  <strong>Tip:</strong> Your data is stored locally in your browser.
                   Export regularly and save to Google Drive or GitHub for safe keeping!
                 </p>
               </div>

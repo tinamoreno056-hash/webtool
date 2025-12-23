@@ -3,7 +3,7 @@ import { Supplier, SupplierTransaction } from '@/types/supplier';
 import { useProducts } from '@/hooks/useProducts';
 import { generateId, formatCurrency, canCreate, canEdit, canDelete, getCompanySettings } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, StatusBadge, EmptyState } from '@/components/ui/custom-components';
+import { PageHeader, StatusBadge } from '@/components/ui/custom-components';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,14 +13,14 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
-import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Plus, MoreHorizontal, Pencil, Trash2, Search, Truck, Mail, Phone, Building2, Printer, User, ShoppingBag, History } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { DataTable } from '@/components/ui/data-table';
+import { ColumnDef } from '@tanstack/react-table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'; // For history
 
 const STORAGE_KEY = 'accounting_suppliers';
 
@@ -54,8 +54,6 @@ export default function Suppliers() {
   const { products } = useProducts();
   const userRole = (profile?.role || 'viewer') as 'admin' | 'staff' | 'viewer';
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -79,19 +77,13 @@ export default function Suppliers() {
     type: 'purchase' as 'purchase' | 'return',
   });
 
+  const userCanCreate = canCreate(userRole);
+  const userCanEdit = canEdit(userRole);
+  const userCanDelete = canDelete(userRole);
+
   useEffect(() => {
     loadSuppliers();
   }, []);
-
-  useEffect(() => {
-    const filtered = suppliers.filter(
-      (s) =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.email.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredSuppliers(filtered);
-  }, [searchQuery, suppliers]);
 
   function loadSuppliers() {
     setSuppliers(getSuppliers());
@@ -311,13 +303,105 @@ export default function Suppliers() {
     toast.success('Transaction added successfully!');
   }
 
+  const columns: ColumnDef<Supplier>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => {
+        const supplier = row.original;
+        return (
+          <div>
+            <p className="font-medium">{supplier.name}</p>
+            {supplier.company && <p className="text-sm text-muted-foreground">{supplier.company}</p>}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "email",
+      header: "Contact",
+      cell: ({ row }) => {
+        const supplier = row.original;
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-sm">
+              <Mail className="h-3 w-3" /> {supplier.email}
+            </div>
+            {supplier.phone && (
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Phone className="h-3 w-3" /> {supplier.phone}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "totalPurchases",
+      header: "Total Purchases",
+      cell: ({ row }) => formatCurrency(row.original.totalPurchases),
+    },
+    {
+      accessorKey: "outstandingBalance",
+      header: "Outstanding",
+      cell: ({ row }) => {
+        const amount = row.original.outstandingBalance;
+        return (
+          <span className={amount > 0 ? 'text-destructive font-medium' : ''}>
+            {formatCurrency(amount)}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <StatusBadge
+          status={row.original.status}
+          variant={row.original.status === 'active' ? 'success' : 'default'}
+        />
+      ),
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => {
+        const supplier = row.original;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openTransactionDialog(supplier)}>
+                <ShoppingBag className="mr-2 h-4 w-4" /> Add Transaction
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openHistoryDialog(supplier)}>
+                <History className="mr-2 h-4 w-4" /> View History
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handlePrintSlip(supplier)}>
+                <Printer className="mr-2 h-4 w-4" /> Print Slip
+              </DropdownMenuItem>
+              {userCanEdit && (
+                <DropdownMenuItem onClick={() => handleEdit(supplier)}>
+                  <Pencil className="mr-2 h-4 w-4" /> Edit
+                </DropdownMenuItem>
+              )}
+              {userCanDelete && (
+                <DropdownMenuItem onClick={() => handleDelete(supplier.id)} className="text-destructive">
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+
   const totalPurchases = suppliers.reduce((sum, s) => sum + s.totalPurchases, 0);
   const totalOutstanding = suppliers.reduce((sum, s) => sum + s.outstandingBalance, 0);
   const activeSuppliers = suppliers.filter((s) => s.status === 'active').length;
-
-  const userCanCreate = canCreate(userRole);
-  const userCanEdit = canEdit(userRole);
-  const userCanDelete = canDelete(userRole);
 
   return (
     <div className="space-y-6">
@@ -379,7 +463,7 @@ export default function Suppliers() {
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -390,7 +474,7 @@ export default function Suppliers() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -401,7 +485,7 @@ export default function Suppliers() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -412,7 +496,7 @@ export default function Suppliers() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -425,110 +509,9 @@ export default function Suppliers() {
         </Card>
       </div>
 
-      {/* Search */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search suppliers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </CardContent>
+      <Card className="glass-card p-6">
+        <DataTable columns={columns} data={suppliers} searchKey="name" />
       </Card>
-
-      {/* Suppliers Table */}
-      {filteredSuppliers.length === 0 ? (
-        <EmptyState
-          icon={Truck}
-          title="No suppliers found"
-          description={searchQuery ? 'Try a different search term' : 'Add your first supplier to get started'}
-          action={userCanCreate && !searchQuery && (
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" /> Add Supplier
-            </Button>
-          )}
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Purchases</TableHead>
-                  <TableHead>Outstanding</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredSuppliers.map((supplier) => (
-                  <TableRow key={supplier.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{supplier.name}</p>
-                        {supplier.company && <p className="text-sm text-muted-foreground">{supplier.company}</p>}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Mail className="h-3 w-3" /> {supplier.email}
-                        </div>
-                        {supplier.phone && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Phone className="h-3 w-3" /> {supplier.phone}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatCurrency(supplier.totalPurchases)}</TableCell>
-                    <TableCell className={supplier.outstandingBalance > 0 ? 'text-destructive' : ''}>
-                      {formatCurrency(supplier.outstandingBalance)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={supplier.status} variant={supplier.status === 'active' ? 'success' : 'default'} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openTransactionDialog(supplier)}>
-                            <ShoppingBag className="mr-2 h-4 w-4" /> Add Transaction
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openHistoryDialog(supplier)}>
-                            <History className="mr-2 h-4 w-4" /> View History
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handlePrintSlip(supplier)}>
-                            <Printer className="mr-2 h-4 w-4" /> Print Slip
-                          </DropdownMenuItem>
-                          {userCanEdit && (
-                            <DropdownMenuItem onClick={() => handleEdit(supplier)}>
-                              <Pencil className="mr-2 h-4 w-4" /> Edit
-                            </DropdownMenuItem>
-                          )}
-                          {userCanDelete && (
-                            <DropdownMenuItem onClick={() => handleDelete(supplier.id)} className="text-destructive">
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Transaction Dialog */}
       <Dialog open={transactionDialogOpen} onOpenChange={setTransactionDialogOpen}>
@@ -667,9 +650,9 @@ export default function Suppliers() {
                         <TableCell className="text-right">{formatCurrency(txn.unitPrice)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(txn.total)}</TableCell>
                         <TableCell>
-                          <StatusBadge 
-                            status={txn.type} 
-                            variant={txn.type === 'purchase' ? 'info' : 'default'} 
+                          <StatusBadge
+                            status={txn.type}
+                            variant={txn.type === 'purchase' ? 'info' : 'default'}
                           />
                         </TableCell>
                       </TableRow>

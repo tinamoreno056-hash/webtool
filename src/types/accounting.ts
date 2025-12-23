@@ -44,11 +44,25 @@ export interface Client {
   transactions?: ClientTransaction[]; // Purchase history
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  company?: string;
+  totalExpenses: number;
+  outstandingBalance: number;
+  status: 'active' | 'inactive';
+  createdAt: string;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  clientId: string;
-  clientName: string;
+  type: 'sale' | 'purchase'; // 'sale' for clients, 'purchase' for suppliers
+  clientId: string; // This can be clientId or supplierId based on type
+  clientName: string; // Client name or Supplier name
   items: InvoiceItem[];
   subtotal: number;
   tax: number;
@@ -58,6 +72,8 @@ export interface Invoice {
   dueDate: string;
   paidDate?: string;
 }
+
+export type Purchase = Invoice; // Alias for clarity, but same structure
 
 export interface InvoiceItem {
   id: string;
@@ -100,18 +116,19 @@ export interface DashboardStats {
   expenseChange: number;
 }
 
-export type UserRole = 'admin' | 'staff' | 'viewer';
+export type UserRole = 'admin' | 'manager' | 'staff' | 'viewer';
 
 export interface AppUser {
   id: string;
   username: string;
-  password: string; // Hashed with per-user salt
-  salt?: string; // Unique salt for password hashing
-  role: UserRole;
+  password?: string;
+  salt?: string;
   name: string;
   email?: string;
-  createdAt: string;
+  role: UserRole;
   isActive: boolean;
+  createdAt: string;
+  lastLogin?: string;
 }
 
 export interface AuthState {

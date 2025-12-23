@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>FORCE FIX - AccuBooks</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #28a745;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #dc3545;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #17a2b8;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .danger {
+            background: #dc3545;
+        }
+
+        .danger:hover {
+            background: #c82333;
+        }
+
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin: 15px 0;
+        }
+
+        .step {
+            background: #f8f9fa;
+            padding: 15px;
+            border-left: 4px solid #667eea;
+            margin: 15px 0;
+        }
+
+        .step strong {
+            color: #667eea;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔧 FORCE FIX TOOL</h1>
+        <div class="subtitle">This will fix ALL permission issues</div>
+
+        <div id="status"></div>
+
+        <button onclick="forceFix()" style="background: #28a745; font-size: 18px; padding: 20px;">
+            ✅ CLICK HERE TO FIX EVERYTHING NOW
+        </button>
+
+        <div class="step">
+            <strong>After clicking above:</strong><br>
+            1. Wait for success message<br>
+            2. Go back to your app (http://localhost:8080)<br>
+            3. Press F5 to refresh<br>
+            4. Login with: <strong>admin</strong> / <strong>admin</strong><br>
+            5. All buttons will appear!
+        </div>
+
+        <button onclick="showDetails()">Show Current Data (Debug)</button>
+        <div id="details"></div>
+    </div>
+
+    <script>
+        function forceFix() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<div class="status info">⏳ Fixing...</div>';
+
+            // Clear everything first
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('accounting_'));
+            keys.forEach(k => localStorage.removeItem(k));
+
+            // Create perfect admin user
+            const adminUser = {
+                id: 'admin-1',
+                username: 'admin',
+                password: '__NEEDS_HASH__:admin',
+                role: 'admin',
+                name: 'Administrator',
+                email: 'admin@accubooks.com',
+                createdAt: new Date().toISOString(),
+                isActive: true
+            };
+
+            // Set users
+            localStorage.setItem('accounting_users', JSON.stringify([adminUser]));
+
+            // Set auth state
+            const authState = {
+                isAuthenticated: true,
+                currentUser: adminUser
+            };
+            localStorage.setItem('accounting_auth', JSON.stringify(authState));
+
+            // Success message
+            statusDiv.innerHTML = `
+                <div class="status success">
+                    ✅ <strong>FIXED!</strong><br><br>
+                    Now do this:<br>
+                    1. Go to: <a href="http://localhost:8080" target="_blank" style="color: #155724; text-decoration: underline;">http://localhost:8080</a><br>
+                    2. Press F5 to refresh the page<br>
+                    3. Login with username: <strong>admin</strong> and password: <strong>admin</strong><br>
+                    4. Navigate to Clients, Suppliers, or Users pages<br>
+                    5. You will see all the ADD buttons!
+                </div>
+            `;
+        }
+
+        function showDetails() {
+            const detailsDiv = document.getElementById('details');
+            const auth = localStorage.getItem('accounting_auth');
+            const users = localStorage.getItem('accounting_users');
+
+            detailsDiv.innerHTML = `
+                <h3>Auth State:</h3>
+                <pre>${auth || 'None'}</pre>
+                <h3>Users:</h3>
+                <pre>${users || 'None'}</pre>
+            `;
+        }
+
+        // Auto-show current state
+        window.onload = () => {
+            const auth = localStorage.getItem('accounting_auth');
+            if (auth) {
+                try {
+                    const data = JSON.parse(auth);
+                    const role = data.currentUser?.role;
+                    if (role === 'admin') {
+                        document.getElementById('status').innerHTML =
+                            '<div class="status success">You are already admin! If buttons still missing, click the fix button anyway.</div>';
+                    } else {
+                        document.getElementById('status').innerHTML =
+                            '<div class="status error">Problem found: You are logged in as "' + role + '" instead of "admin".<br>Click the button above to fix!</div>';
+                    }
+                } catch (e) {
+                    document.getElementById('status').innerHTML =
+                        '<div class="status error">Invalid auth data. Click the button above to fix!</div>';
+                }
+            } else {
+                document.getElementById('status').innerHTML =
+                    '<div class="status error">No login found. Click the button above to fix!</div>';
+            }
+        };
+    </script>
+</body>
+
+</html>

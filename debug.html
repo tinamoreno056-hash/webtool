@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AccuBooks - Debug & Fix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .danger { background: #dc3545; }
+        .danger:hover { background: #c82333; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 AccuBooks Debug & Fix Tool</h1>
+    
+    <div class="card">
+        <h2>Current User Status</h2>
+        <div id="userStatus"></div>
+        <pre id="authData"></pre>
+    </div>
+
+    <div class="card">
+        <h2>Quick Fixes</h2>
+        <button onclick="fixAdminRole()">Fix: Set Admin Role</button>
+        <button onclick="clearAndReset()" class="danger">Reset All Data (Fresh Start)</button>
+        <div id="fixResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>All Users in System</h2>
+        <pre id="allUsers"></pre>
+    </div>
+
+    <script>
+        function checkStatus() {
+            const authData = localStorage.getItem('accounting_auth');
+            const usersData = localStorage.getItem('accounting_users');
+            
+            const statusDiv = document.getElementById('userStatus');
+            const authDiv = document.getElementById('authData');
+            const usersDiv = document.getElementById('allUsers');
+
+            if (!authData) {
+                statusDiv.innerHTML = '<div class="status error">❌ Not logged in</div>';
+                authDiv.textContent = 'No auth data found';
+                return;
+            }
+
+            const auth = JSON.parse(authData);
+            const users = usersData ? JSON.parse(usersData) : [];
+
+            authDiv.textContent = JSON.stringify(auth, null, 2);
+            usersDiv.textContent = JSON.stringify(users, null, 2);
+
+            if (auth.currentUser) {
+                const role = auth.currentUser.role;
+                if (role === 'admin') {
+                    statusDiv.innerHTML = `<div class="status success">✅ Logged in as: ${auth.currentUser.username} (${role})</div>
+                        <p><strong>You should see all buttons!</strong> If not, try refreshing the page.</p>`;
+                } else {
+                    statusDiv.innerHTML = `<div class="status warning">⚠️ Logged in as: ${auth.currentUser.username} (${role})</div>
+                        <p><strong>Problem found:</strong> Your role is "${role}" but you need "admin" to see Add buttons.</p>
+                        <p>Click "Fix: Set Admin Role" below to fix this.</p>`;
+                }
+            } else {
+                statusDiv.innerHTML = '<div class="status error">❌ No current user in auth state</div>';
+            }
+        }
+
+        function fixAdminRole() {
+            const authData = localStorage.getItem('accounting_auth');
+            if (!authData) {
+                alert('Please log in first!');
+                return;
+            }
+
+            const auth = JSON.parse(authData);
+            if (auth.currentUser) {
+                auth.currentUser.role = 'admin';
+                localStorage.setItem('accounting_auth', JSON.stringify(auth));
+                
+                // Also update in users list
+                const usersData = localStorage.getItem('accounting_users');
+                if (usersData) {
+                    const users = JSON.parse(usersData);
+                    const userIndex = users.findIndex(u => u.id === auth.currentUser.id);
+                    if (userIndex >= 0) {
+                        users[userIndex].role = 'admin';
+                        localStorage.setItem('accounting_users', JSON.stringify(users));
+                    }
+                }
+
+                document.getElementById('fixResult').innerHTML = 
+                    '<div class="status success">✅ Fixed! Role set to admin. Please refresh your app page.</div>';
+                checkStatus();
+            }
+        }
+
+        function clearAndReset() {
+            if (!confirm('This will delete ALL data and create a fresh admin account. Continue?')) {
+                return;
+            }
+
+            // Clear all accounting data
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('accounting_'));
+            keys.forEach(k => localStorage.removeItem(k));
+
+            document.getElementById('fixResult').innerHTML = 
+                '<div class="status success">✅ All data cleared! Please refresh and log in with username: admin, password: admin</div>';
+            
+            setTimeout(checkStatus, 500);
+        }
+
+        // Run on load
+        checkStatus();
+    </script>
+</body>
+</html>

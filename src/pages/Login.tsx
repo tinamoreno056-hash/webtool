@@ -11,58 +11,25 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 const loginSchema = z.object({
-  identifier: z.string().trim().min(1, { message: "Email or username is required" }),
+  username: z.string().trim().min(1, { message: "Username is required" }),
   password: z.string().min(1, { message: "Password is required" }),
 });
 
 export default function Login() {
-  const [identifier, setIdentifier] = useState('');
+  const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'ahsan.ahmad87@gmail.com';
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn, isAuthenticated } = useAuth();
+  const { signIn, isAuthenticated, resetPassword } = useAuth();
   const navigate = useNavigate();
 
-  // Create admin account on first load (one-time setup)
-  useEffect(() => {
-    async function createAdminIfNeeded() {
-      // Check if admin already exists by trying to sign in
-      const { error } = await supabase.auth.signInWithPassword({
-        email: 'ahsan.ahmad87@gmail.com',
-        password: 'Ehsaan',
-      });
-      
-      if (error && error.message.includes('Invalid login credentials')) {
-        // Admin doesn't exist, create it
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: 'ahsan.ahmad87@gmail.com',
-          password: 'Ehsaan',
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: {
-              username: 'admin',
-              full_name: 'Ehsaan Ahmad',
-              role: 'admin',
-            }
-          }
-        });
-        
-        if (!signUpError) {
-          console.log('Admin account created successfully');
-        }
-      } else if (!error) {
-        // Sign out after checking - don't auto-login
-        await supabase.auth.signOut();
-      }
-    }
-    
-    createAdminIfNeeded();
-  }, []);
+
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    
-    const validation = loginSchema.safeParse({ identifier, password });
+
+    const validation = loginSchema.safeParse({ username, password });
     if (!validation.success) {
       toast.error(validation.error.errors[0].message);
       return;
@@ -70,60 +37,89 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Determine if input is email or username
-      const isEmail = identifier.includes('@');
-      let email = identifier;
-      
-      if (!isEmail) {
-        // Look up email by username from profiles
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('user_id')
-          .eq('username', identifier)
-          .maybeSingle();
-        
-        if (profileError || !profileData) {
-          toast.error('Invalid username or password');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Get the user's email from auth
-        const { data: userData } = await supabase.auth.admin?.getUserById?.(profileData.user_id) || {};
-        
-        // If we can't get email via admin API, try with the identifier as email anyway
-        // This will work if user enters their email directly
-        if (!userData?.user?.email) {
-          // Try signing in with identifier as email (fallback)
-          const { error } = await signIn(identifier, password);
-          if (error) {
-            toast.error('Invalid username or password');
+      // Resolve email by username using RPC or admin email
+      const emailLocal = localStorage.getItem('accubooks_admin_email') || ADMIN_EMAIL;
+      const adminEmailToUse = username === 'admin' ? emailLocal : null;
+      let emailToUse: string | null = adminEmailToUse;
+      if (!emailToUse) {
+        const { data: resolvedEmail, error: rpcError } = await supabase.rpc('resolve_email_by_username', {
+          p_username: username,
+        });
+        if (rpcError) {
+          console.warn('RPC resolve_email_by_username failed:', rpcError);
+          // Fallback: if username looks like an email, use it. 
+          // Or if it's 'admin', use the local admin email.
+          if (username.toLowerCase() === 'admin') {
+            // Pass 'admin' directly so AuthContext fallback can find the user by username
+            // ignoring potentially stale local storage email
+            emailToUse = 'admin';
+          } else if (username.includes('@')) {
+            emailToUse = username;
           } else {
-            toast.success('Welcome back, Ehsaan Ahmad!');
-            navigate('/');
+            // If we can't resolve it, we might still try to pass it to signIn 
+            // in case AuthContext handles it (which we just added logic for).
+            emailToUse = username;
           }
-          setIsLoading(false);
-          return;
         }
-        
-        email = userData.user.email;
+        if (!emailToUse && !rpcError) {
+          // RPC returned null/empty
+          emailToUse = null;
+        } else if (!emailToUse) {
+          // Fallback logic above might have set it
+          emailToUse = (resolvedEmail as string) || null;
+        }
       }
-      
-      const { error } = await signIn(email, password);
+
+      if (!emailToUse) {
+        // Final attempt: if it's just a username, pass it through. 
+        // AuthContext might match it against local users.
+        emailToUse = username;
+      }
+
+      if (!emailToUse) {
+        toast.error('Invalid username or password');
+        setIsLoading(false);
+        return;
+      }
+      const { error } = await signIn(emailToUse, password);
       if (error) {
-        if (error.message.includes('Invalid login credentials')) {
-          toast.error('Invalid email/username or password');
+        if (error.message.toLowerCase().includes('confirm')) {
+          toast.error('Please confirm the email before signing in');
+        } else if (error.message.includes('Invalid login credentials')) {
+          toast.error('Invalid username or password');
         } else {
           toast.error(error.message);
         }
       } else {
-        toast.success('Welcome back, Ehsaan Ahmad!');
+        toast.success('Welcome back!');
         navigate('/');
       }
     } catch (error) {
       toast.error('An error occurred during login');
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    const emailLocal = localStorage.getItem('accubooks_admin_email') || ADMIN_EMAIL;
+    const adminEmailToUse = username === 'admin' ? emailLocal : null;
+    let emailToUse: string | null = adminEmailToUse;
+    if (!emailToUse && username) {
+      const { data: resolvedEmail } = await supabase.rpc('resolve_email_by_username', {
+        p_username: username,
+      });
+      emailToUse = (resolvedEmail as string) || null;
+    }
+    if (!emailToUse) {
+      toast.error('Enter a valid username first');
+      return;
+    }
+    const { error } = await resetPassword(emailToUse);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.info('Password reset link sent to your email');
     }
   }
 
@@ -146,21 +142,22 @@ export default function Login() {
           <CardHeader className="text-center">
             <CardTitle>Sign In</CardTitle>
             <CardDescription>
-              Enter your email or username to access your account
+              Enter your username to access your account
             </CardDescription>
           </CardHeader>
           <CardContent>
+
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="login-identifier">Email or Username</Label>
+                <Label htmlFor="login-username">Username</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    id="login-identifier"
+                    id="login-username"
                     type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="admin or your@email.com"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="admin"
                     className="pl-10"
                     required
                   />
@@ -193,6 +190,15 @@ export default function Login() {
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? 'Signing in...' : 'Sign In'}
               </Button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-xs text-muted-foreground hover:text-foreground underline mt-2"
+                >
+                  Forgot password?
+                </button>
+              </div>
             </form>
 
             <div className="mt-6 rounded-lg bg-muted/50 p-4 text-center text-sm text-muted-foreground">

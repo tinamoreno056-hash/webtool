@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Invoice, InvoiceItem, Client } from '@/types/accounting';
 import { getInvoices, saveInvoice, deleteInvoice, getClients, generateId, formatCurrency, canCreate, canEdit, canDelete, getCompanySettings } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, StatusBadge, EmptyState } from '@/components/ui/custom-components';
+import { PageHeader, StatusBadge } from '@/components/ui/custom-components';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,17 +19,16 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MoreHorizontal, Pencil, Trash2, Search, FileText, Send, CheckCircle, AlertCircle, X, Printer } from 'lucide-react';
+import { Plus, MoreHorizontal, Pencil, Trash2, FileText, Send, CheckCircle, AlertCircle, X, Printer, ArrowUpDown, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
+import { DataTable } from '@/components/ui/data-table';
+import { ColumnDef } from '@tanstack/react-table';
 
 export default function Invoices() {
   const { profile } = useAuth();
-  const userRole = (profile?.role || 'viewer') as 'admin' | 'staff' | 'viewer';
+  const userRole = (profile?.role || 'viewer') as 'admin' | 'manager' | 'staff' | 'viewer';
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [formData, setFormData] = useState({
@@ -42,22 +41,10 @@ export default function Invoices() {
   });
 
   useEffect(() => { loadData(); }, []);
-  useEffect(() => { filterInvoices(); }, [invoices, searchQuery, statusFilter]);
 
   function loadData() {
     setInvoices(getInvoices());
     setClients(getClients());
-  }
-
-  function filterInvoices() {
-    let filtered = [...invoices];
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(i => i.invoiceNumber.toLowerCase().includes(query) || i.clientName.toLowerCase().includes(query));
-    }
-    if (statusFilter !== 'all') filtered = filtered.filter(i => i.status === statusFilter);
-    filtered.sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime());
-    setFilteredInvoices(filtered);
   }
 
   function calculateTotals() {
@@ -168,11 +155,86 @@ export default function Invoices() {
     setFormData({ clientId: '', issueDate: new Date().toISOString().split('T')[0], dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], status: 'draft', items: [{ id: generateId(), description: '', quantity: 1, rate: 0, amount: 0 }], taxRate: 10 });
   }
 
+  const columns: ColumnDef<Invoice>[] = [
+    {
+      accessorKey: "invoiceNumber",
+      header: "Invoice #",
+      cell: ({ row }) => <span className="font-mono font-medium">{row.getValue("invoiceNumber")}</span>,
+    },
+    {
+      accessorKey: "clientName",
+      header: "Client",
+    },
+    {
+      accessorKey: "issueDate",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Issue Date
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        )
+      },
+      cell: ({ row }) => new Date(row.getValue("issueDate")).toLocaleDateString(),
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => {
+        const status = row.getValue("status") as Invoice['status'];
+        const variant = ({ paid: 'success', sent: 'info', overdue: 'danger', draft: 'default', cancelled: 'danger' } as const)[status] || 'default';
+        return <StatusBadge status={status} variant={variant} />;
+      },
+    },
+    {
+      accessorKey: "total",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Amount
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        )
+      },
+      cell: ({ row }) => <div className="font-semibold text-right">{formatCurrency(row.getValue("total"))}</div>,
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => {
+        const inv = row.original;
+        const canEditInv = canEdit(userRole);
+        const canDeleteInv = canDelete(userRole);
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handlePrint(inv)}><Printer className="mr-2 h-4 w-4" />Print</DropdownMenuItem>
+              {canEditInv && <DropdownMenuItem onClick={() => handleEdit(inv)}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
+              {canEditInv && inv.status === 'draft' && <DropdownMenuItem onClick={() => handleStatusChange(inv, 'sent')}><Send className="mr-2 h-4 w-4" />Mark Sent</DropdownMenuItem>}
+              {canEditInv && (inv.status === 'sent' || inv.status === 'overdue') && <DropdownMenuItem onClick={() => handleStatusChange(inv, 'paid')}><CheckCircle className="mr-2 h-4 w-4" />Mark Paid</DropdownMenuItem>}
+              {canDeleteInv && <DropdownMenuItem onClick={() => handleDelete(inv.id)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+
   const { subtotal, tax, total } = calculateTotals();
   const totalPaid = invoices.filter(i => i.status === 'paid').reduce((sum, i) => sum + i.total, 0);
   const totalPending = invoices.filter(i => i.status === 'sent').reduce((sum, i) => sum + i.total, 0);
   const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((sum, i) => sum + i.total, 0);
-  const getStatusVariant = (status: Invoice['status']): 'success' | 'info' | 'danger' | 'default' | 'warning' => ({ paid: 'success' as const, sent: 'info' as const, overdue: 'danger' as const, draft: 'default' as const, cancelled: 'danger' as const }[status] || 'default');
   const userCanCreate = canCreate(userRole);
 
   return (
@@ -221,30 +283,19 @@ export default function Invoices() {
       )} />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10"><FileText className="h-6 w-6 text-primary" /></div><div><p className="text-sm text-muted-foreground">Total</p><p className="text-xl font-bold">{invoices.length}</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10"><CheckCircle className="h-6 w-6 text-success" /></div><div><p className="text-sm text-muted-foreground">Paid</p><p className="text-xl font-bold text-success">{formatCurrency(totalPaid)}</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-info/10"><Send className="h-6 w-6 text-info" /></div><div><p className="text-sm text-muted-foreground">Pending</p><p className="text-xl font-bold">{formatCurrency(totalPending)}</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10"><AlertCircle className="h-6 w-6 text-destructive" /></div><div><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-bold text-destructive">{formatCurrency(totalOverdue)}</p></div></CardContent></Card>
+        <Card className="glass-card"><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10"><FileText className="h-6 w-6 text-primary" /></div><div><p className="text-sm text-muted-foreground">Total</p><p className="text-xl font-bold">{invoices.length}</p></div></CardContent></Card>
+        <Card className="glass-card"><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10"><CheckCircle className="h-6 w-6 text-success" /></div><div><p className="text-sm text-muted-foreground">Paid</p><p className="text-xl font-bold text-success">{formatCurrency(totalPaid)}</p></div></CardContent></Card>
+        <Card className="glass-card"><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-info/10"><Send className="h-6 w-6 text-info" /></div><div><p className="text-sm text-muted-foreground">Pending</p><p className="text-xl font-bold">{formatCurrency(totalPending)}</p></div></CardContent></Card>
+        <Card className="glass-card"><CardContent className="flex items-center gap-4 p-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10"><AlertCircle className="h-6 w-6 text-destructive" /></div><div><p className="text-sm text-muted-foreground">Overdue</p><p className="text-xl font-bold text-destructive">{formatCurrency(totalOverdue)}</p></div></CardContent></Card>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" /></div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="sent">Sent</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="overdue">Overdue</SelectItem></SelectContent></Select>
-      </div>
+      <Card className="glass-card p-6">
+        <DataTable columns={columns} data={invoices} searchKey="clientName" />
+      </Card>
 
-      {filteredInvoices.length === 0 ? <EmptyState icon={FileText} title="No invoices" description="Create your first invoice." action={userCanCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Create</Button>} /> : (
-        <Card><CardContent className="p-0"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead className="hidden sm:table-cell">Client</TableHead><TableHead className="hidden md:table-cell">Issue</TableHead><TableHead className="hidden md:table-cell">Due</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead></TableHead></TableRow></TableHeader>
-          <TableBody>{filteredInvoices.map(inv => (
-            <TableRow key={inv.id}><TableCell className="font-mono font-medium">{inv.invoiceNumber}</TableCell><TableCell className="hidden sm:table-cell">{inv.clientName}</TableCell><TableCell className="hidden md:table-cell">{new Date(inv.issueDate).toLocaleDateString()}</TableCell><TableCell className="hidden md:table-cell">{new Date(inv.dueDate).toLocaleDateString()}</TableCell><TableCell><StatusBadge status={inv.status} variant={getStatusVariant(inv.status)} /></TableCell><TableCell className="text-right font-semibold">{formatCurrency(inv.total)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handlePrint(inv)}><Printer className="mr-2 h-4 w-4" />Print</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleEdit(inv)}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>
-                  {inv.status === 'draft' && <DropdownMenuItem onClick={() => handleStatusChange(inv, 'sent')}><Send className="mr-2 h-4 w-4" />Mark Sent</DropdownMenuItem>}
-                  {(inv.status === 'sent' || inv.status === 'overdue') && <DropdownMenuItem onClick={() => handleStatusChange(inv, 'paid')}><CheckCircle className="mr-2 h-4 w-4" />Mark Paid</DropdownMenuItem>}
-                  <DropdownMenuItem onClick={() => handleDelete(inv.id)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
-                </DropdownMenuContent></DropdownMenu></TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
-      )}
+      <div className="text-center text-xs text-muted-foreground pt-4">
+        <p>Developed by <strong>Ehsaan Ahmad</strong> | Phone: +923224875471</p>
+      </div>
     </div>
   );
 }

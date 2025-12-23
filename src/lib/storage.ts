@@ -66,16 +66,25 @@ export function getUsers(): AppUser[] {
     const defaultAdmin: AppUser = {
       id: 'admin-1',
       username: 'admin',
-      password: '__NEEDS_HASH__:Ehsaan', // Marker for migration
+      password: '__NEEDS_HASH__:admin', // Marker for migration
       role: 'admin',
       name: 'Administrator',
-      email: 'admin@example.com',
+      email: 'ahsan.ahmad87@gmail.com',
       createdAt: new Date().toISOString(),
       isActive: true,
     };
     setItem(STORAGE_KEYS.USERS, [defaultAdmin]);
     return [defaultAdmin];
   }
+
+  // Auto-migrate old default admin if found (Fix for existing sessions)
+  const adminIndex = users.findIndex(u => u.id === 'admin-1' && u.password === '__NEEDS_HASH__:Ehsaan');
+  if (adminIndex >= 0) {
+    users[adminIndex].password = '__NEEDS_HASH__:admin';
+    users[adminIndex].email = 'ahsan.ahmad87@gmail.com';
+    setItem(STORAGE_KEYS.USERS, users);
+  }
+
   return users;
 }
 
@@ -108,13 +117,13 @@ export async function loginAsync(username: string, password: string): Promise<{ 
   const { hashPassword, verifyPassword, generateSessionToken, setSessionToken, generateSalt } = await import('./crypto');
   const users = getUsers();
   const user = users.find(u => u.username === username && u.isActive);
-  
+
   if (!user) {
     return { success: false, error: 'Invalid username or password' };
   }
 
   let isValid = false;
-  
+
   // Handle legacy plaintext passwords (migration)
   if (user.password.startsWith('__NEEDS_HASH__:')) {
     const plainPassword = user.password.replace('__NEEDS_HASH__:', '');
@@ -146,13 +155,13 @@ export async function loginAsync(username: string, password: string): Promise<{ 
   if (isValid) {
     const sessionToken = generateSessionToken();
     setSessionToken(sessionToken);
-    
+
     // Store session with token (not password)
     const userForSession = { ...user, password: '[PROTECTED]', salt: undefined };
     setAuthState({ isAuthenticated: true, currentUser: userForSession, sessionToken });
     return { success: true, user: userForSession };
   }
-  
+
   return { success: false, error: 'Invalid username or password' };
 }
 
@@ -172,7 +181,7 @@ export function login(username: string, password: string): { success: boolean; u
   // Keeping for compatibility but it will not work with hashed passwords
   const users = getUsers();
   const user = users.find(u => u.username === username && u.isActive);
-  
+
   if (user && (user.password === password || user.password === `__NEEDS_HASH__:${password}`)) {
     setAuthState({ isAuthenticated: true, currentUser: user });
     return { success: true, user };
@@ -209,15 +218,15 @@ export function changePassword(userId: string, newPassword: string): boolean {
 
 // Role-based permissions
 export function canCreate(role: AppUser['role']): boolean {
-  return role === 'admin' || role === 'staff';
+  return role === 'admin' || role === 'manager' || role === 'staff';
 }
 
 export function canEdit(role: AppUser['role']): boolean {
-  return role === 'admin'; // Staff can only add, not edit
+  return role === 'admin' || role === 'manager';
 }
 
 export function canDelete(role: AppUser['role']): boolean {
-  return role === 'admin';
+  return role === 'admin' || role === 'manager';
 }
 
 export function canManageUsers(role: AppUser['role']): boolean {
@@ -266,25 +275,68 @@ export function deleteClient(id: string): void {
   setItem(STORAGE_KEYS.CLIENTS, clients);
 }
 
-// Invoices
+// Suppliers
+export function getSuppliers(): Supplier[] {
+  return getItem<Supplier[]>('accounting_suppliers', getDefaultSuppliers());
+}
+
+export function saveSupplier(supplier: Supplier): void {
+  const suppliers = getSuppliers();
+  const index = suppliers.findIndex(s => s.id === supplier.id);
+  if (index >= 0) {
+    suppliers[index] = supplier;
+  } else {
+    suppliers.push(supplier);
+  }
+  setItem('accounting_suppliers', suppliers);
+}
+
+export function deleteSupplier(id: string): void {
+  const suppliers = getSuppliers().filter(s => s.id !== id);
+  setItem('accounting_suppliers', suppliers);
+}
+
+// Invoices (Sales) & Purchases
 export function getInvoices(): Invoice[] {
-  return getItem<Invoice[]>(STORAGE_KEYS.INVOICES, getDefaultInvoices());
+  const all = getItem<Invoice[]>(STORAGE_KEYS.INVOICES, getDefaultInvoices());
+  // Migration: If type is missing, it's a sale
+  let needsSave = false;
+  const migrated = all.map(inv => {
+    if (!inv.type) {
+      needsSave = true;
+      return { ...inv, type: 'sale' as const };
+    }
+    return inv;
+  });
+
+  if (needsSave) setItem(STORAGE_KEYS.INVOICES, migrated);
+
+  return migrated.filter(i => i.type === 'sale');
+}
+
+export function getPurchases(): Invoice[] {
+  const all = getItem<Invoice[]>(STORAGE_KEYS.INVOICES, []);
+  return all.filter(i => i.type === 'purchase');
 }
 
 export function saveInvoice(invoice: Invoice): void {
-  const invoices = getInvoices();
-  const index = invoices.findIndex(i => i.id === invoice.id);
+  const all = getItem<Invoice[]>(STORAGE_KEYS.INVOICES, getDefaultInvoices());
+  const index = all.findIndex(i => i.id === invoice.id);
+
+  // Ensure type is set
+  const itemToSave = { ...invoice, type: invoice.type || 'sale' };
+
   if (index >= 0) {
-    invoices[index] = invoice;
+    all[index] = itemToSave;
   } else {
-    invoices.push(invoice);
+    all.push(itemToSave);
   }
-  setItem(STORAGE_KEYS.INVOICES, invoices);
+  setItem(STORAGE_KEYS.INVOICES, all);
 }
 
 export function deleteInvoice(id: string): void {
-  const invoices = getInvoices().filter(i => i.id !== id);
-  setItem(STORAGE_KEYS.INVOICES, invoices);
+  const all = getItem<Invoice[]>(STORAGE_KEYS.INVOICES, getDefaultInvoices()).filter(i => i.id !== id);
+  setItem(STORAGE_KEYS.INVOICES, all);
 }
 
 // Accounts
@@ -322,7 +374,7 @@ export function formatCurrency(amount: number, currencyCode?: string): string {
   const settings = getCompanySettings();
   const code = currencyCode || settings.currency;
   const currency = CURRENCIES.find(c => c.code === code);
-  
+
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: code,
@@ -335,7 +387,7 @@ export function formatCurrency(amount: number, currencyCode?: string): string {
 export function formatDate(dateString: string, options?: Intl.DateTimeFormatOptions): string {
   const settings = getCompanySettings();
   const date = new Date(dateString);
-  
+
   return new Intl.DateTimeFormat('en-US', {
     timeZone: settings.timezone || 'Asia/Karachi',
     ...options,
@@ -355,24 +407,24 @@ export function getCurrentDateTime(): string {
 export function getDashboardStats(): DashboardStats {
   const transactions = getTransactions();
   const invoices = getInvoices();
-  
+
   const totalRevenue = transactions
     .filter(t => t.type === 'income' && t.status === 'completed')
     .reduce((sum, t) => sum + t.amount, 0);
-  
+
   const totalExpenses = transactions
     .filter(t => t.type === 'expense' && t.status === 'completed')
     .reduce((sum, t) => sum + t.amount, 0);
-  
+
   const accountsReceivable = invoices
     .filter(i => i.status === 'sent' || i.status === 'overdue')
     .reduce((sum, i) => sum + i.total, 0);
-  
+
   const accounts = getAccounts();
   const cashBalance = accounts
     .filter(a => a.type === 'asset' && a.name.toLowerCase().includes('cash'))
     .reduce((sum, a) => sum + a.balance, 0);
-  
+
   return {
     totalRevenue,
     totalExpenses,
@@ -453,11 +505,29 @@ function getDefaultClients(): Client[] {
   ];
 }
 
+function getDefaultSuppliers(): Supplier[] {
+  return [
+    {
+      id: '1',
+      name: 'Office Depot',
+      email: 'sales@officedepot.com',
+      phone: '+92 300 9876543',
+      address: 'Main Market, Lahore',
+      company: 'Office Depot Inc.',
+      totalExpenses: 5000,
+      outstandingBalance: 0,
+      status: 'active',
+      createdAt: '2023-01-10',
+    }
+  ];
+}
+
 function getDefaultInvoices(): Invoice[] {
   return [
     {
       id: '1',
       invoiceNumber: 'INV-001',
+      type: 'sale',
       clientId: '1',
       clientName: 'Acme Corporation',
       items: [
