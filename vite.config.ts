@@ -11,6 +11,15 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      onwarn(warning, warn) {
+        // Ignore warnings for external Vercel analytics script
+        if (warning.code === 'UNRESOLVED_ENTRY' && warning.id?.includes('/_vercel/insights/script.js')) {
+          return;
+        }
+        warn(warning);
+      }
+    }
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

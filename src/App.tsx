@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { initializeTheme } from "@/lib/storage";
+import { Analytics } from "@vercel/analytics/react";
 import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import Clients from "./pages/Clients";
@@ -160,6 +161,7 @@ const App = () => (
           <AppRoutes />
         </AuthProvider>
       </BrowserRouter>
+      <Analytics />
     </TooltipProvider>
   </QueryClientProvider>
 );
